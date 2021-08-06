@@ -506,13 +506,17 @@ class TestPeephole(JitTestCase):
         FileCheck().check("aten::add").run(foo.graph)
 
     def test_optimize_out_comparison_same_value(self):
-        @torch.jit.script
         def foo(x: int):
             return x == x, x != x
 
-        self.run_pass("peephole", foo.graph)
-        FileCheck().check_not("aten::eq").check_not("aten::neq").run(foo.graph)
-        self.assertEqual(foo(1), (True, False))
+        def foo2(x: List[int]):
+            return x == x, x != x
+
+        for func, inp in zip([foo, foo2], [1, [2, 3]]):
+            func_s = torch.jit.script(func)
+            self.run_pass("peephole", func_s.graph)
+            FileCheck().check_not("aten::eq").check_not("aten::neq").run(func_s.graph)
+            self.assertEqual(func(inp), func_s(inp))
 
     def test_refine_integer_values(self):
         @torch.jit.script
@@ -554,6 +558,15 @@ class TestPeephole(JitTestCase):
         self.run_pass("peephole", foo.graph)
         FileCheck().check("aten::len").run(foo.graph)
         self.assertEqual(3, foo(torch.rand([3, 1])))
+
+    def test_peephole_int(self):
+        @torch.jit.script
+        def foo(x: int):
+            return int(x)
+
+        FileCheck().check("aten::Int").run(foo.graph)
+        self.run_pass("peephole", foo.graph)
+        FileCheck().check_not("aten::Int").run(foo.graph)
 
     def test_peephole_arith(self):
         @torch.jit.script
